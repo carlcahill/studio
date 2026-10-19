@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { isAuthorizationNotFound } from '@/lib/oauth/authorization-error'
 import { isClaudeRedirectUri } from '@/lib/oauth/claude-redirect'
 import { NextResponse } from 'next/server'
 
@@ -36,41 +37,41 @@ function consentErrorRedirect(
   return NextResponse.redirect(url, 303)
 }
 
-export async function POST(request: Request) {
-  if (!sameOrigin(request)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+type DecisionResult =
+  | { kind: 'redirect'; url: string }
+  | { kind: 'consent'; message: string }
+  | { kind: 'reject'; status: number; error: string }
 
-  const form = await request.formData()
-  const decision = form.get('decision')
-  const authorizationId = form.get('authorization_id')
-  if (typeof authorizationId !== 'string' || !authorizationId) {
-    return NextResponse.json({ error: 'Missing authorization request' }, { status: 400 })
-  }
+// Share one decision for this authorization so a double submit cannot approve twice.
+const decisionRequests = new Map<string, Promise<DecisionResult>>()
 
+async function decide(
+  authorizationId: string,
+  decision: FormDataEntryValue | null
+): Promise<DecisionResult> {
   const supabase = await createClient()
   const { data, error: detailsError } =
     await supabase.auth.oauth.getAuthorizationDetails(authorizationId)
   if (detailsError || !data) {
-    return consentErrorRedirect(
-      request,
-      authorizationId,
-      detailsError?.message ||
-        'This connection request has expired. Start again from Claude.'
-    )
+    return {
+      kind: 'consent',
+      message:
+        detailsError?.message ||
+        'This connection request has expired. Start again from Claude.',
+    }
   }
 
   const details = data as AuthorizationPayload
 
   if (!details.authorization_id) {
     if (!details.redirect_url || !isClaudeRedirectUri(details.redirect_url)) {
-      return NextResponse.json({ error: CANNOT_CONNECT }, { status: 400 })
+      return { kind: 'reject', status: 400, error: CANNOT_CONNECT }
     }
-    return NextResponse.redirect(details.redirect_url, 303)
+    return { kind: 'redirect', url: details.redirect_url }
   }
 
   if (!details.redirect_uri || !isClaudeRedirectUri(details.redirect_uri)) {
-    return NextResponse.json({ error: CANNOT_CONNECT }, { status: 400 })
+    return { kind: 'reject', status: 400, error: CANNOT_CONNECT }
   }
 
   const result =
@@ -83,14 +84,53 @@ export async function POST(request: Request) {
         })
 
   if (result.error || !result.data?.redirect_url) {
-    return consentErrorRedirect(
-      request,
-      authorizationId,
-      result.error?.message || 'Could not finish the connection.'
-    )
+    return {
+      kind: 'consent',
+      message: result.error?.message || 'Could not finish the connection.',
+    }
   }
   if (!isClaudeRedirectUri(result.data.redirect_url)) {
-    return NextResponse.json({ error: CANNOT_CONNECT }, { status: 400 })
+    return { kind: 'reject', status: 400, error: CANNOT_CONNECT }
   }
-  return NextResponse.redirect(result.data.redirect_url, 303)
+  return { kind: 'redirect', url: result.data.redirect_url }
+}
+
+function decisionResponse(
+  request: Request,
+  authorizationId: string,
+  result: DecisionResult
+) {
+  if (result.kind === 'redirect') return NextResponse.redirect(result.url, 303)
+  if (result.kind === 'consent') {
+    return consentErrorRedirect(request, authorizationId, result.message)
+  }
+  return NextResponse.json({ error: result.error }, { status: result.status })
+}
+
+export async function POST(request: Request) {
+  if (!sameOrigin(request)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const form = await request.formData()
+  const decision = form.get('decision')
+  const authorizationId = form.get('authorization_id')
+  if (typeof authorizationId !== 'string' || !authorizationId) {
+    return NextResponse.json({ error: 'Missing authorization request' }, { status: 400 })
+  }
+
+  const key = `${decision === 'approve' ? 'approve' : 'deny'}:${authorizationId}`
+  let pending = decisionRequests.get(key)
+  if (!pending) {
+    pending = decide(authorizationId, decision).then((result) => {
+      if (result.kind === 'consent' && !isAuthorizationNotFound(result.message)) {
+        decisionRequests.delete(key)
+      }
+      if (result.kind === 'reject') decisionRequests.delete(key)
+      return result
+    })
+    decisionRequests.set(key, pending)
+  }
+
+  return decisionResponse(request, authorizationId, await pending)
 }
