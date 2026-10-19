@@ -88,8 +88,23 @@ export async function proxy(request: NextRequest) {
         }
       }
 
-      // Redirect authenticated users away from login
+      // Signed-in visits to login go to the studio, except a Claude consent
+      // return, which must keep authorization_id on the query string.
       if (request.nextUrl.pathname.startsWith('/auth/login') && user) {
+        const redirectTo = request.nextUrl.searchParams.get('redirect')
+        if (redirectTo?.startsWith('/oauth/consent')) {
+          try {
+            const target = new URL(redirectTo, request.url)
+            if (
+              target.origin === request.nextUrl.origin &&
+              target.pathname === '/oauth/consent'
+            ) {
+              return NextResponse.redirect(target)
+            }
+          } catch {
+            // Ignore a malformed consent return and send them into the studio.
+          }
+        }
         const url = request.nextUrl.clone()
         url.pathname = '/time-tracking'
         return NextResponse.redirect(url)
