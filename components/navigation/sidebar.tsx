@@ -8,6 +8,7 @@ import {
   Users,
   Settings,
   LogOut,
+  KeyRound,
   Palette,
   TrendingUp,
   CalendarHeart,
@@ -237,6 +238,41 @@ function NavLinks({
   )
 }
 
+function AccountFooter({
+  pathname,
+  onNavigate,
+  onLogout,
+}: {
+  pathname: string | null
+  onNavigate?: () => void
+  onLogout: () => void
+}) {
+  const passwordActive = pathname === '/account' || Boolean(pathname?.startsWith('/account/'))
+
+  return (
+    <div className="space-y-1 border-t p-3">
+      <Button
+        variant={passwordActive ? 'secondary' : 'ghost'}
+        className="w-full justify-start"
+        asChild
+      >
+        <Link href="/account" onClick={onNavigate}>
+          <KeyRound className="mr-2 h-4 w-4" />
+          Password
+        </Link>
+      </Button>
+      <Button
+        variant="ghost"
+        className="w-full justify-start"
+        onClick={onLogout}
+      >
+        <LogOut className="mr-2 h-4 w-4" />
+        Sign out
+      </Button>
+    </div>
+  )
+}
+
 export function Sidebar({ userRole = 'manager' }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -254,19 +290,10 @@ export function Sidebar({ userRole = 'manager' }: SidebarProps) {
       <div className="flex h-16 items-center border-b px-6">
         <h1 className="text-xl font-semibold">Studio</h1>
       </div>
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
         <NavLinks items={filteredNav} pathname={pathname} />
       </nav>
-      <div className="border-t p-3">
-        <Button
-          variant="ghost"
-          className="w-full justify-start"
-          onClick={handleLogout}
-        >
-          <LogOut className="mr-2 h-4 w-4" />
-          Sign out
-        </Button>
-      </div>
+      <AccountFooter pathname={pathname} onLogout={handleLogout} />
     </div>
   )
 }
@@ -323,23 +350,14 @@ export function MobileNav({ userRole = 'manager' }: MobileNavProps) {
         <SheetHeader className="border-b px-6 py-4">
           <SheetTitle className="text-xl font-semibold">Studio</SheetTitle>
         </SheetHeader>
-        <nav className="flex-1 space-y-1 px-3 py-4">
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
           <NavLinks
             items={filteredNav}
             pathname={pathname}
             onNavigate={handleNavClick}
           />
         </nav>
-        <div className="border-t p-3">
-          <Button
-            variant="ghost"
-            className="w-full justify-start"
-            onClick={handleLogout}
-          >
-            <LogOut className="mr-2 h-4 w-4" />
-            Sign out
-          </Button>
-        </div>
+        <AccountFooter pathname={pathname} onNavigate={handleNavClick} onLogout={handleLogout} />
       </SheetContent>
     </Sheet>
   )

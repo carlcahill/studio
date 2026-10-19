@@ -74,6 +74,7 @@ export async function proxy(request: NextRequest) {
           request.nextUrl.pathname.startsWith('/billing') ||
           request.nextUrl.pathname.startsWith('/customers') ||
           request.nextUrl.pathname.startsWith('/settings') ||
+          request.nextUrl.pathname.startsWith('/account') ||
           request.nextUrl.pathname.startsWith('/retainers') ||
           request.nextUrl.pathname.startsWith('/sow') ||
           request.nextUrl.pathname.startsWith('/product-cards')) &&
