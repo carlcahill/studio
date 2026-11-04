@@ -712,6 +712,51 @@ async function persistSowDocument(
   }
 }
 
+async function persistApprovedDeliverables(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  id: string,
+  document: SowDocument,
+  lineItems: SowLineItemInput[]
+) {
+  if (!lineItems.length) return { error: 'Add at least one deliverable' }
+
+  for (const item of lineItems) {
+    if (!item.title.trim()) return { error: 'Each deliverable needs a title' }
+    const timelineError = validateLineItemTimeline(item.timeline_start, item.timeline_end)
+    if (timelineError) return { error: `${item.title.trim() || 'Deliverable'}: ${timelineError}` }
+  }
+
+  const hoursPerDay = Number(document.hours_per_day) > 0 ? Number(document.hours_per_day) : 6
+  const dayRate = Number(document.base_day_rate_gbp)
+  if (!(dayRate > 0)) {
+    return { error: 'This statement of work has no day rate to price deliverables' }
+  }
+
+  const hourlyRate = hourlyRateFromQuoteRate(dayRate, hoursPerDay)
+  const mappedItems = mapLineItems(lineItems, hoursPerDay, hourlyRate)
+  const discountPercent = parseDiscountPercent(document.discount_percent).percent
+  const totals = applySowDiscount(
+    computeSowTotals(mappedItems, document.include_vat),
+    discountPercent,
+    document.include_vat
+  )
+
+  try {
+    const { error: docError } = await supabase.from('sow_documents').update(totals).eq('id', id)
+    if (docError) throw docError
+
+    await supabase.from('sow_line_items').delete().eq('sow_id', id)
+    const rows = mappedItems.map((item) => ({ ...item, sow_id: id }))
+    const { error: itemsError } = await supabase.from('sow_line_items').insert(rows)
+    if (itemsError) throw itemsError
+
+    return { success: true as const }
+  } catch (error) {
+    console.error('Error updating approved SoW deliverables:', error)
+    return { error: getActionError(error, 'Failed to update deliverables') }
+  }
+}
+
 export async function updateSowDocument(id: string, input: SowDocumentInput) {
   const auth = await requireTeamMember()
   if (auth.error || !auth.supabase) return { error: auth.error ?? 'Not authenticated' }
@@ -719,7 +764,7 @@ export async function updateSowDocument(id: string, input: SowDocumentInput) {
   const existing = await getSowDocument(id)
   if (existing.error || !existing.document) return { error: existing.error || 'Not found' }
   if (existing.document.status === 'approved') {
-    return { error: 'This statement of work is approved. Use Update scope to change it.' }
+    return { error: 'This statement of work is approved. Use Update deliverables to change it.' }
   }
   if (existing.document.status === 'complete') {
     return { error: 'Complete statements of work cannot be edited' }
@@ -759,10 +804,15 @@ export async function updateApprovedSowDocument(
         error: 'Apply the latest database migration before updating an approved statement of work.',
       }
     }
-    return { error: getActionError(tableError, 'Could not record the scope update') }
+    return { error: getActionError(tableError, 'Could not record the deliverable update') }
   }
 
-  const saved = await persistSowDocument(auth.supabase, id, input)
+  const saved = await persistApprovedDeliverables(
+    auth.supabase,
+    id,
+    existing.document,
+    input.line_items
+  )
   if ('error' in saved) return saved
 
   const { error: amendmentError } = await auth.supabase.from('sow_scope_amendments').insert({
@@ -776,7 +826,7 @@ export async function updateApprovedSowDocument(
     return {
       error: getActionError(
         amendmentError,
-        'The scope was saved, but the note could not be recorded'
+        'The deliverables were saved, but the note could not be recorded'
       ),
     }
   }

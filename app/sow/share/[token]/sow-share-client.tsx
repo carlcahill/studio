@@ -53,7 +53,7 @@ function ScopeAmendments({
   return (
     <div className="space-y-1 border-t border-green-200 pt-2 dark:border-green-900">
       <p className="text-sm font-medium text-green-800 dark:text-green-300">
-        Scope updated after approval
+        Deliverables updated after approval
       </p>
       {amendments.map((amendment) => (
         <p key={amendment.id} className="text-sm text-green-700 dark:text-green-400">

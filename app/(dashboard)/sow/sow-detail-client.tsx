@@ -221,7 +221,8 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
 
   const statusLocked = document?.status === 'approved' || document?.status === 'complete'
   const isAmendingScope = document?.status === 'approved' && amendingScope
-  const isReadOnly = statusLocked && !isAmendingScope
+  const isReadOnly = statusLocked
+  const deliverablesLocked = statusLocked && !isAmendingScope
   const isPartnerWork = customerType === 'partner'
   const resolvedAgencyName = agencyName === '__custom__' ? customAgency.trim() : agencyName
   const resolvedClientName = clientName === '__custom__' ? customClient.trim() : clientName
@@ -937,21 +938,23 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
       } else if (sowId && isAmendingScope) {
         const result = await updateApprovedSowDocument(sowId, payload, scopeNote)
         if (result.error) {
-          toast.error('Error saving scope update', { description: result.error })
+          toast.error('Error saving deliverables', { description: result.error })
         } else {
           setAmendingScope(false)
           setScopeNote('')
           if (document?.monday_item_id) {
             const monday = await updateSowOnMonday(sowId)
             if (monday.error) {
-              toast.warning('Scope updated, but Monday could not be refreshed', {
+              toast.warning('Deliverables updated, but Monday could not be refreshed', {
                 description: monday.error,
               })
             } else {
-              toast.success('Scope updated. Approval is unchanged, and Monday has the new scope.')
+              toast.success(
+                'Deliverables updated. Approval is unchanged, and Monday has the new scope.'
+              )
             }
           } else {
-            toast.success('Scope updated. Approval is unchanged, and the share link shows it.')
+            toast.success('Deliverables updated. Approval is unchanged, and the share link shows them.')
           }
           await loadDocument(sowId)
         }
@@ -982,7 +985,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
 
   async function handleUpdateMonday() {
     if (!sowId || !hasMondayLink) return
-    if (!isReadOnly && !validateBeforeSave()) return
+    if (!deliverablesLocked && !validateBeforeSave()) return
     setUpdatingMonday(true)
     try {
       // Persist latest edits first so Monday gets current values
@@ -990,7 +993,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
       if (isAmendingScope) {
         const saveResult = await updateApprovedSowDocument(sowId, buildPayload(false), scopeNote)
         if (saveResult.error) {
-          toast.error('Save the scope update before updating Monday', {
+          toast.error('Save the deliverables before updating Monday', {
             description: saveResult.error,
           })
           return
@@ -998,7 +1001,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
         savedAmendment = true
         setAmendingScope(false)
         setScopeNote('')
-      } else if (!isReadOnly) {
+      } else if (!statusLocked) {
         const saveResult = await updateSowDocument(sowId, buildPayload(false))
         if (saveResult.error) {
           toast.error('Save SoW before updating Monday', { description: saveResult.error })
@@ -1013,7 +1016,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
       } else {
         toast.success(
           savedAmendment
-            ? 'Scope updated. Approval is unchanged, and Monday has the new scope.'
+            ? 'Deliverables updated. Approval is unchanged, and Monday has the new scope.'
             : result.message || 'Monday item updated'
         )
         await loadDocument(sowId)
@@ -1089,12 +1092,13 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
     }
     setScopeNote(scopeNoteDraft.trim())
     setAmendingScope(true)
+    setEditorTab('deliverables')
     setScopeDialogOpen(false)
   }
 
   async function handleCancelScopeUpdate() {
     if (!sowId) return
-    if (!confirm('Discard this scope update? The approved statement of work will stay as it is.')) {
+    if (!confirm('Discard these deliverable changes? The approved statement of work will stay as it is.')) {
       return
     }
     setAmendingScope(false)
@@ -1210,7 +1214,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
               )}
               {(document.scope_amendments?.length ?? 0) > 0 && (
                 <div className="text-sm border rounded-md p-2 bg-muted/50 max-w-xl space-y-1">
-                  <p className="font-medium">Scope updated after approval</p>
+                  <p className="font-medium">Deliverables updated after approval</p>
                   {document.scope_amendments?.map((amendment) => (
                     <p key={amendment.id} className="text-muted-foreground">
                       {formatSowDate(amendment.created_at, document.currency)}
@@ -1242,7 +1246,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
           {document?.status === 'approved' && !isAmendingScope && (
             <Button variant="outline" onClick={handleStartScopeUpdate}>
               <Pencil className="mr-2 h-4 w-4" />
-              Update scope
+              Update deliverables
             </Button>
           )}
           {isAmendingScope && (
@@ -1282,7 +1286,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
               Archive
             </Button>
           )}
-          {hasMondayLink && !isReadOnly && (
+          {hasMondayLink && !deliverablesLocked && (
             <Button
               variant="outline"
               onClick={handleUpdateMonday}
@@ -1296,10 +1300,10 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
               Update Monday
             </Button>
           )}
-          {!isReadOnly && (
+          {!deliverablesLocked && (
             <Button onClick={handleSave} disabled={saving || updatingMonday}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isNew ? 'Create SoW' : isAmendingScope ? 'Save scope update' : 'Save changes'}
+              {isNew ? 'Create SoW' : isAmendingScope ? 'Save deliverables' : 'Save changes'}
             </Button>
           )}
         </div>
@@ -1308,10 +1312,10 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
       {isAmendingScope && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3 dark:border-amber-900 dark:bg-amber-950/30">
           <div>
-            <p className="font-medium">Updating an approved statement of work</p>
+            <p className="font-medium">Editing deliverables on an approved statement of work</p>
             <p className="text-sm text-muted-foreground">
-              Client approval stays in place. Saving records this note, updates the share link,
-              and refreshes Monday when the SoW is already linked.
+              Project details, rates, and the payment schedule stay as approved. Saving records
+              this note, updates the share link, and refreshes Monday when the SoW is already linked.
             </p>
           </div>
           <div className="space-y-2 max-w-xl">
@@ -1588,7 +1592,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
                         Tasks with time, cost, and optional Monday timelines
                       </CardDescription>
                     </div>
-                    {!isReadOnly && (
+                    {!deliverablesLocked && (
                       <div className="flex flex-wrap items-center gap-2">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -1659,7 +1663,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
                   {lineItems.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
                       No line items yet
-                      {!isReadOnly && '. Add a deliverable to get started.'}
+                      {!deliverablesLocked && '. Add a deliverable to get started.'}
                     </p>
                   ) : (
                     <Table>
@@ -1669,7 +1673,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
                           <TableHead className="text-right">Time</TableHead>
                           <TableHead>Timeline</TableHead>
                           <TableHead className="text-right">Cost</TableHead>
-                          {!isReadOnly && <TableHead className="w-20" />}
+                          {!deliverablesLocked && <TableHead className="w-20" />}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1699,7 +1703,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
                                   : '—'}
                               </TableCell>
                               <TableCell className="text-right">{formatMoney(cost)}</TableCell>
-                              {!isReadOnly && (
+                              {!deliverablesLocked && (
                                 <TableCell>
                                   <div className="flex items-center justify-end gap-0.5">
                                     <Button
@@ -1728,7 +1732,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
                     </Table>
                   )}
 
-                  {!isReadOnly && (
+                  {!deliverablesLocked && (
                     <Button type="button" variant="outline" size="sm" onClick={openAddLineItem}>
                       <Plus className="mr-1 h-4 w-4" />
                       Add line item
@@ -2378,10 +2382,11 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
       <Dialog open={scopeDialogOpen} onOpenChange={setScopeDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Update approved scope</DialogTitle>
+            <DialogTitle>Update deliverables</DialogTitle>
             <DialogDescription>
-              The client already knows about this change. Approval stays as it is, and the
-              existing share link shows the updated statement of work.
+              The client already knows about this change. You can edit deliverables only.
+              Approval, rates, and the payment schedule stay as they are, and the share link
+              shows the updated deliverables.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">

@@ -290,7 +290,7 @@ function SowTable({
                 </Badge>
                 {doc.scope_amendments?.[0] && (
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Scope updated{' '}
+                    Deliverables updated{' '}
                     {new Date(doc.scope_amendments[0].created_at).toLocaleDateString()}
                   </p>
                 )}
