@@ -959,3 +959,5 @@ For posterity. The file names in `supabase/migrations/` always map 1:1 to the ch
 | 086 | `product_card_cover` | Optional cover image on `product_cards`. Public functions return it only when it is a sample, or client work that has been signed off. |
 | 087 | `product_cards_team_manage` | Designers and managers can add and edit product cards and their files. |
 | 088 | `sow_discount` | `sow_documents.discount_percent`. Percentage off the subtotal, before VAT. |
+| 089 | `project_invoices_held_status` | `project_invoices` status `held` for planned invoices that must not be raised yet. |
+| 090 | `sow_scope_amendments` | Notes for scope changes made after client approval. Approval itself stays in place. |

@@ -73,6 +73,7 @@ import {
   getSowClients,
   getSowDocument,
   setSowWhiteLabelView,
+  updateApprovedSowDocument,
   updateSowDocument,
   type SowDocument,
   type SowShareLink,
@@ -95,6 +96,7 @@ import {
   parseDiscountPercent,
   scaleForQuote,
   resolvePartyRate,
+  formatSowDate,
   formatSowMoney,
   suggestLineItemTimeline,
   type SowCurrency,
@@ -104,6 +106,7 @@ import {
   buildSowDeliverablesTemplateCsv,
   parseSowDeliverablesCsv,
 } from '@/lib/sow/csv-import'
+import { scopeAmendmentNoteError } from '@/lib/sow/amendments'
 import { getClientApprovalStatus } from '@/lib/sow/status'
 import { cn } from '@/lib/utils'
 
@@ -167,6 +170,10 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
   const [updatingMonday, setUpdatingMonday] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
   const [completing, setCompleting] = useState(false)
+  const [amendingScope, setAmendingScope] = useState(false)
+  const [scopeNote, setScopeNote] = useState('')
+  const [scopeNoteDraft, setScopeNoteDraft] = useState('')
+  const [scopeDialogOpen, setScopeDialogOpen] = useState(false)
   const [editorTab, setEditorTab] = useState<'details' | 'deliverables' | 'payment' | 'rates'>(
     'details'
   )
@@ -212,7 +219,9 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [lineItemDialogOpen, setLineItemDialogOpen] = useState(false)
 
-  const isReadOnly = document?.status === 'approved' || document?.status === 'complete'
+  const statusLocked = document?.status === 'approved' || document?.status === 'complete'
+  const isAmendingScope = document?.status === 'approved' && amendingScope
+  const isReadOnly = statusLocked && !isAmendingScope
   const isPartnerWork = customerType === 'partner'
   const resolvedAgencyName = agencyName === '__custom__' ? customAgency.trim() : agencyName
   const resolvedClientName = clientName === '__custom__' ? customClient.trim() : clientName
@@ -224,6 +233,9 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
 
   useEffect(() => {
     partySelectionKeyRef.current = null
+    setAmendingScope(false)
+    setScopeNote('')
+    setScopeNoteDraft('')
     loadSupportingData()
     if (sowId) loadDocument(sowId)
   }, [sowId])
@@ -820,75 +832,91 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
     [paymentMilestones]
   )
 
-  async function handleSave() {
+  function buildPayload(pushOnCreate: boolean) {
+    return {
+      title: title.trim(),
+      client_name: resolvedClientName,
+      agency_name: isPartnerWork ? resolvedAgencyName : null,
+      customer_type: customerType,
+      include_vat: includeVat,
+      show_quoted_hours: showQuotedHours,
+      show_payment_schedule: showPaymentSchedule,
+      allow_white_label_view: isPartnerWork && allowWhiteLabelView,
+      start_date: startDate || null,
+      end_date: endDate || null,
+      day_rate_override_gbp: dayRateOverride,
+      discount_percent: discountPercent,
+      hours_per_day: hoursPerDay,
+      currency,
+      fx_rate: fxRate,
+      notes: notes.trim() || null,
+      monday_project_id: mondayProjectId,
+      push_to_monday: pushOnCreate,
+      payment_milestones: paymentMilestones.map((m) => ({
+        label: m.label,
+        percentage: Number(m.percentage),
+        due_date: m.due_date || null,
+      })),
+      line_items: lineItems.map((item) => ({
+        title: item.title,
+        description: item.description.trim() || null,
+        quantity: item.quantity,
+        is_days: item.is_days,
+        timeline_start: item.timeline_start || null,
+        timeline_end: item.timeline_end || null,
+      })),
+    }
+  }
+
+  function validateBeforeSave() {
     if (!title.trim()) {
       toast.error('Title is required')
-      return
+      return false
     }
     if (!resolvedClientName) {
       toast.error('End client is required')
-      return
+      return false
     }
     if (isPartnerWork && !resolvedAgencyName) {
       toast.error('Agency partner is required')
-      return
+      return false
     }
     if (lineItems.length === 0) {
       toast.error('Add at least one line item')
-      return
+      return false
     }
     if (dayRateOverrideInput.trim() && dayRateOverride == null) {
       toast.error('Quoted day rate must be greater than 0')
-      return
+      return false
     }
     if (discountParsed.invalid) {
       toast.error('Discount must be between 0 and 100%')
-      return
+      return false
     }
     if (!(parseFloat(hoursPerDayInput) > 0)) {
       toast.error('Hours per day must be greater than 0')
-      return
+      return false
     }
     if (currency === 'USD' && !(parseFloat(fxRateInput) > 0)) {
       toast.error('Enter a valid USD exchange rate (units per £1)')
-      return
+      return false
     }
+    if (isAmendingScope) {
+      const noteError = scopeAmendmentNoteError(scopeNote)
+      if (noteError) {
+        toast.error(noteError)
+        return false
+      }
+    }
+    return true
+  }
+
+  async function handleSave() {
+    if (!validateBeforeSave()) return
 
     setSaving(true)
     try {
-      const payload = {
-        title: title.trim(),
-        client_name: resolvedClientName,
-        agency_name: isPartnerWork ? resolvedAgencyName : null,
-        customer_type: customerType,
-        include_vat: includeVat,
-        show_quoted_hours: showQuotedHours,
-        show_payment_schedule: showPaymentSchedule,
-        allow_white_label_view: isPartnerWork && allowWhiteLabelView,
-        start_date: startDate || null,
-        end_date: endDate || null,
-        day_rate_override_gbp: dayRateOverride,
-        discount_percent: discountPercent,
-        hours_per_day: hoursPerDay,
-        currency,
-        fx_rate: fxRate,
-        notes: notes.trim() || null,
-        monday_project_id: mondayProjectId,
-        push_to_monday: isNew && pushToMonday && !hasMondayLink,
-        payment_milestones: paymentMilestones.map((m) => ({
-          label: m.label,
-          percentage: Number(m.percentage),
-          due_date: m.due_date || null,
-        })),
-        line_items: lineItems.map((item) => ({
-          title: item.title,
-          description: item.description.trim() || null,
-          quantity: item.quantity,
-          is_days: item.is_days,
-          timeline_start: item.timeline_start || null,
-          timeline_end: item.timeline_end || null,
-        })),
-      }
+      const payload = buildPayload(isNew && pushToMonday && !hasMondayLink)
 
       if (isNew) {
         const result = await createSowDocument(payload)
@@ -905,6 +933,27 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
             toast.success('Statement of work created')
           }
           router.push(`/sow/${result.document.id}`)
+        }
+      } else if (sowId && isAmendingScope) {
+        const result = await updateApprovedSowDocument(sowId, payload, scopeNote)
+        if (result.error) {
+          toast.error('Error saving scope update', { description: result.error })
+        } else {
+          setAmendingScope(false)
+          setScopeNote('')
+          if (document?.monday_item_id) {
+            const monday = await updateSowOnMonday(sowId)
+            if (monday.error) {
+              toast.warning('Scope updated, but Monday could not be refreshed', {
+                description: monday.error,
+              })
+            } else {
+              toast.success('Scope updated. Approval is unchanged, and Monday has the new scope.')
+            }
+          } else {
+            toast.success('Scope updated. Approval is unchanged, and the share link shows it.')
+          }
+          await loadDocument(sowId)
         }
       } else if (sowId) {
         const result = await updateSowDocument(sowId, payload)
@@ -933,44 +982,24 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
 
   async function handleUpdateMonday() {
     if (!sowId || !hasMondayLink) return
+    if (!isReadOnly && !validateBeforeSave()) return
     setUpdatingMonday(true)
     try {
       // Persist latest edits first so Monday gets current values
-      if (!isReadOnly) {
-        const payload = {
-          title: title.trim(),
-          client_name: resolvedClientName,
-          agency_name: isPartnerWork ? resolvedAgencyName : null,
-          customer_type: customerType,
-          include_vat: includeVat,
-          show_quoted_hours: showQuotedHours,
-          show_payment_schedule: showPaymentSchedule,
-          allow_white_label_view: isPartnerWork && allowWhiteLabelView,
-          start_date: startDate || null,
-          end_date: endDate || null,
-          day_rate_override_gbp: dayRateOverride,
-          discount_percent: discountPercent,
-          hours_per_day: hoursPerDay,
-          currency,
-          fx_rate: fxRate,
-          notes: notes.trim() || null,
-          monday_project_id: mondayProjectId,
-          push_to_monday: false,
-          payment_milestones: paymentMilestones.map((m) => ({
-            label: m.label,
-            percentage: Number(m.percentage),
-            due_date: m.due_date || null,
-          })),
-          line_items: lineItems.map((item) => ({
-            title: item.title,
-            description: item.description.trim() || null,
-            quantity: item.quantity,
-            is_days: item.is_days,
-            timeline_start: item.timeline_start || null,
-            timeline_end: item.timeline_end || null,
-          })),
+      let savedAmendment = false
+      if (isAmendingScope) {
+        const saveResult = await updateApprovedSowDocument(sowId, buildPayload(false), scopeNote)
+        if (saveResult.error) {
+          toast.error('Save the scope update before updating Monday', {
+            description: saveResult.error,
+          })
+          return
         }
-        const saveResult = await updateSowDocument(sowId, payload)
+        savedAmendment = true
+        setAmendingScope(false)
+        setScopeNote('')
+      } else if (!isReadOnly) {
+        const saveResult = await updateSowDocument(sowId, buildPayload(false))
         if (saveResult.error) {
           toast.error('Save SoW before updating Monday', { description: saveResult.error })
           return
@@ -980,8 +1009,13 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
       const result = await updateSowOnMonday(sowId)
       if (result.error) {
         toast.error('Could not update Monday', { description: result.error })
+        if (savedAmendment) await loadDocument(sowId)
       } else {
-        toast.success(result.message || 'Monday item updated')
+        toast.success(
+          savedAmendment
+            ? 'Scope updated. Approval is unchanged, and Monday has the new scope.'
+            : result.message || 'Monday item updated'
+        )
         await loadDocument(sowId)
       }
     } finally {
@@ -1040,6 +1074,33 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
     } finally {
       setDuplicating(false)
     }
+  }
+
+  function handleStartScopeUpdate() {
+    setScopeNoteDraft(scopeNote)
+    setScopeDialogOpen(true)
+  }
+
+  function handleConfirmScopeUpdate() {
+    const noteError = scopeAmendmentNoteError(scopeNoteDraft)
+    if (noteError) {
+      toast.error(noteError)
+      return
+    }
+    setScopeNote(scopeNoteDraft.trim())
+    setAmendingScope(true)
+    setScopeDialogOpen(false)
+  }
+
+  async function handleCancelScopeUpdate() {
+    if (!sowId) return
+    if (!confirm('Discard this scope update? The approved statement of work will stay as it is.')) {
+      return
+    }
+    setAmendingScope(false)
+    setScopeNote('')
+    setScopeNoteDraft('')
+    await loadDocument(sowId)
   }
 
   async function handleComplete() {
@@ -1147,6 +1208,19 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
                   {document.rejection_notes}
                 </p>
               )}
+              {(document.scope_amendments?.length ?? 0) > 0 && (
+                <div className="text-sm border rounded-md p-2 bg-muted/50 max-w-xl space-y-1">
+                  <p className="font-medium">Scope updated after approval</p>
+                  {document.scope_amendments?.map((amendment) => (
+                    <p key={amendment.id} className="text-muted-foreground">
+                      {formatSowDate(amendment.created_at, document.currency)}
+                      {amendment.created_by_name ? ` · ${amendment.created_by_name}` : ''}
+                      {' — '}
+                      {amendment.note}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1165,7 +1239,22 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
               Duplicate
             </Button>
           )}
-          {document?.status === 'approved' && (
+          {document?.status === 'approved' && !isAmendingScope && (
+            <Button variant="outline" onClick={handleStartScopeUpdate}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Update scope
+            </Button>
+          )}
+          {isAmendingScope && (
+            <Button
+              variant="outline"
+              onClick={handleCancelScopeUpdate}
+              disabled={saving || updatingMonday}
+            >
+              Cancel update
+            </Button>
+          )}
+          {document?.status === 'approved' && !isAmendingScope && (
             <Button
               variant="outline"
               onClick={handleComplete}
@@ -1188,7 +1277,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
               Delete
             </Button>
           )}
-          {!isNew && !isReadOnly && (
+          {!isNew && !statusLocked && (
             <Button variant="outline" onClick={handleArchive}>
               Archive
             </Button>
@@ -1210,11 +1299,33 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
           {!isReadOnly && (
             <Button onClick={handleSave} disabled={saving || updatingMonday}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isNew ? 'Create SoW' : 'Save changes'}
+              {isNew ? 'Create SoW' : isAmendingScope ? 'Save scope update' : 'Save changes'}
             </Button>
           )}
         </div>
       </div>
+
+      {isAmendingScope && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3 dark:border-amber-900 dark:bg-amber-950/30">
+          <div>
+            <p className="font-medium">Updating an approved statement of work</p>
+            <p className="text-sm text-muted-foreground">
+              Client approval stays in place. Saving records this note, updates the share link,
+              and refreshes Monday when the SoW is already linked.
+            </p>
+          </div>
+          <div className="space-y-2 max-w-xl">
+            <Label htmlFor="sow-scope-note">What changed</Label>
+            <Textarea
+              id="sow-scope-note"
+              value={scopeNote}
+              onChange={(event) => setScopeNote(event.target.value)}
+              rows={3}
+              maxLength={500}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
@@ -1446,7 +1557,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
                       disabled={isReadOnly}
                     />
                   </div>
-                  {!hasMondayLink && !isReadOnly && (
+                  {!hasMondayLink && !statusLocked && (
                     <div className="flex items-center justify-between rounded-lg border p-3">
                       <div>
                         <Label htmlFor="sow-push-monday">Push to Leads board</Label>
@@ -2207,7 +2318,7 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
                   className="w-full"
                   variant="outline"
                   onClick={handleCreateShareLink}
-                  disabled={creatingLink || isReadOnly}
+                  disabled={creatingLink || statusLocked}
                 >
                   {creatingLink ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -2263,6 +2374,35 @@ export function SowDetailClient({ sowId }: SowDetailClientProps) {
           )}
         </div>
       </div>
+
+      <Dialog open={scopeDialogOpen} onOpenChange={setScopeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Update approved scope</DialogTitle>
+            <DialogDescription>
+              The client already knows about this change. Approval stays as it is, and the
+              existing share link shows the updated statement of work.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="sow-scope-note-draft">What changed</Label>
+            <Textarea
+              id="sow-scope-note-draft"
+              value={scopeNoteDraft}
+              onChange={(event) => setScopeNoteDraft(event.target.value)}
+              placeholder="Added a second round of homepage revisions"
+              rows={4}
+              maxLength={500}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScopeDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmScopeUpdate}>Continue</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

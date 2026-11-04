@@ -2,6 +2,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 import type { SowDocument, SowLineItem, SowPaymentMilestone, SowStatus } from '@/app/actions/sow'
+import { loadSowScopeAmendments } from '@/lib/sow/amendments'
 
 export interface PublicSowDocument extends SowDocument {
   line_items: SowLineItem[]
@@ -56,12 +57,17 @@ export async function getSowByToken(shareToken: string) {
 
     if (milestonesError) throw milestonesError
 
+    const amendmentsBySow = await loadSowScopeAmendments(validated.adminClient, [
+      validated.sowId,
+    ])
+
     return {
       success: true,
       document: {
         ...(document as SowDocument),
         line_items: (lineItems || []) as SowLineItem[],
         payment_milestones: (paymentMilestones || []) as SowPaymentMilestone[],
+        scope_amendments: amendmentsBySow.get(validated.sowId) ?? [],
       } as PublicSowDocument,
     }
   } catch (error) {

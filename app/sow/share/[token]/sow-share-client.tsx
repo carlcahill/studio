@@ -40,6 +40,30 @@ interface SowShareClientProps {
   shareToken: string
 }
 
+function ScopeAmendments({
+  document,
+  currency,
+}: {
+  document: PublicSowDocument
+  currency: string
+}) {
+  const amendments = document.scope_amendments ?? []
+  if (amendments.length === 0) return null
+
+  return (
+    <div className="space-y-1 border-t border-green-200 pt-2 dark:border-green-900">
+      <p className="text-sm font-medium text-green-800 dark:text-green-300">
+        Scope updated after approval
+      </p>
+      {amendments.map((amendment) => (
+        <p key={amendment.id} className="text-sm text-green-700 dark:text-green-400">
+          {formatSowDate(amendment.created_at, currency)} — {amendment.note}
+        </p>
+      ))}
+    </div>
+  )
+}
+
 export default function SowShareClient({ shareToken }: SowShareClientProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -193,14 +217,17 @@ export default function SowShareClient({ shareToken }: SowShareClientProps) {
 
         {isApproved && (
           <Card className="border-green-200 bg-green-50 dark:bg-green-950/20">
-            <CardContent className="pt-6 flex items-center gap-3">
-              <CheckCircle2 className="h-6 w-6 text-green-600" />
-              <div>
-                <p className="font-semibold text-green-800 dark:text-green-300">Approved</p>
-                <p className="text-sm text-green-700 dark:text-green-400">
-                  {document.approved_by_name} approved this on{' '}
-                  {document.approved_at ? formatSowDate(document.approved_at, currency) : '—'}
-                </p>
+            <CardContent className="pt-6 flex items-start gap-3">
+              <CheckCircle2 className="h-6 w-6 text-green-600 shrink-0" />
+              <div className="space-y-2">
+                <div>
+                  <p className="font-semibold text-green-800 dark:text-green-300">Approved</p>
+                  <p className="text-sm text-green-700 dark:text-green-400">
+                    {document.approved_by_name} approved this on{' '}
+                    {document.approved_at ? formatSowDate(document.approved_at, currency) : '—'}
+                  </p>
+                </div>
+                <ScopeAmendments document={document} currency={currency} />
               </div>
             </CardContent>
           </Card>
@@ -208,13 +235,16 @@ export default function SowShareClient({ shareToken }: SowShareClientProps) {
 
         {isComplete && (
           <Card className="border-green-200 bg-green-50 dark:bg-green-950/20">
-            <CardContent className="pt-6 flex items-center gap-3">
-              <CheckCircle2 className="h-6 w-6 text-green-600" />
-              <div>
-                <p className="font-semibold text-green-800 dark:text-green-300">Complete</p>
-                <p className="text-sm text-green-700 dark:text-green-400">
-                  Work on this statement of work is finished
-                </p>
+            <CardContent className="pt-6 flex items-start gap-3">
+              <CheckCircle2 className="h-6 w-6 text-green-600 shrink-0" />
+              <div className="space-y-2">
+                <div>
+                  <p className="font-semibold text-green-800 dark:text-green-300">Complete</p>
+                  <p className="text-sm text-green-700 dark:text-green-400">
+                    Work on this statement of work is finished
+                  </p>
+                </div>
+                <ScopeAmendments document={document} currency={currency} />
               </div>
             </CardContent>
           </Card>

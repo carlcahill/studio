@@ -15,6 +15,12 @@ import {
   type SowLineItemInput,
   type SowPaymentMilestoneInput,
 } from '@/lib/sow/calculations'
+import {
+  isMissingRelationError,
+  loadSowScopeAmendments,
+  scopeAmendmentNoteError,
+  type SowScopeAmendment,
+} from '@/lib/sow/amendments'
 import crypto from 'crypto'
 
 function getActionError(error: unknown, fallback: string): string {
@@ -95,6 +101,8 @@ export interface SowDocument {
   white_label_day_rate_gbp: number | null
   /** Latest active public share token, when one exists */
   active_share_token?: string | null
+  /** Newest first. Present after a load that reads scope amendments. */
+  scope_amendments?: SowScopeAmendment[]
   line_items?: SowLineItem[]
   payment_milestones?: SowPaymentMilestone[]
 }
@@ -382,11 +390,17 @@ export async function getSowDocuments() {
       }
     }
 
+    const amendmentsBySow = await loadSowScopeAmendments(
+      auth.supabase,
+      documents.map((doc) => doc.id)
+    )
+
     return {
       success: true,
       documents: documents.map((doc) => ({
         ...doc,
         active_share_token: latestTokenBySow.get(doc.id) ?? null,
+        scope_amendments: amendmentsBySow.get(doc.id) ?? [],
       })),
     }
   } catch (error) {
@@ -432,6 +446,10 @@ export async function getSowDocument(id: string) {
 
     if (linksError) throw linksError
 
+    const amendmentsBySow = await loadSowScopeAmendments(auth.supabase, [id], {
+      includeNames: true,
+    })
+
     let linkedLead: SowLinkedLead | null = null
 
     if (document.monday_project_id) {
@@ -475,6 +493,7 @@ export async function getSowDocument(id: string) {
         ...(document as SowDocument),
         line_items: (lineItems || []) as SowLineItem[],
         payment_milestones: (paymentMilestones || []) as SowPaymentMilestone[],
+        scope_amendments: amendmentsBySow.get(id) ?? [],
       },
       shareLinks: (shareLinks || []) as SowShareLink[],
       linkedLead,
@@ -619,19 +638,11 @@ export async function createSowDocument(input: SowDocumentInput) {
   }
 }
 
-export async function updateSowDocument(id: string, input: SowDocumentInput) {
-  const auth = await requireTeamMember()
-  if (auth.error || !auth.supabase) return { error: auth.error ?? 'Not authenticated' }
-
-  const existing = await getSowDocument(id)
-  if (existing.error || !existing.document) return { error: existing.error || 'Not found' }
-  if (
-    existing.document.status === 'approved' ||
-    existing.document.status === 'complete'
-  ) {
-    return { error: 'Approved or complete statements of work cannot be edited' }
-  }
-
+async function persistSowDocument(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  id: string,
+  input: SowDocumentInput
+) {
   const validationError = validateSowInput(input)
   if (validationError) return { error: validationError }
 
@@ -656,7 +667,7 @@ export async function updateSowDocument(id: string, input: SowDocumentInput) {
   if ('error' in whiteLabel) return { error: whiteLabel.error }
 
   try {
-    const { error: docError } = await auth.supabase
+    const { error: docError } = await supabase
       .from('sow_documents')
       .update({
         title: input.title.trim(),
@@ -682,23 +693,95 @@ export async function updateSowDocument(id: string, input: SowDocumentInput) {
 
     if (docError) throw docError
 
-    await auth.supabase.from('sow_line_items').delete().eq('sow_id', id)
+    await supabase.from('sow_line_items').delete().eq('sow_id', id)
     const rows = mappedItems.map((item) => ({ ...item, sow_id: id }))
-    const { error: itemsError } = await auth.supabase.from('sow_line_items').insert(rows)
+    const { error: itemsError } = await supabase.from('sow_line_items').insert(rows)
     if (itemsError) throw itemsError
 
-    await auth.supabase.from('sow_payment_milestones').delete().eq('sow_id', id)
+    await supabase.from('sow_payment_milestones').delete().eq('sow_id', id)
     const milestoneRows = mapPaymentMilestones(input.payment_milestones, id)
-    const { error: milestonesError } = await auth.supabase
+    const { error: milestonesError } = await supabase
       .from('sow_payment_milestones')
       .insert(milestoneRows)
     if (milestonesError) throw milestonesError
 
-    return { success: true }
+    return { success: true as const }
   } catch (error) {
     console.error('Error updating SoW:', error)
     return { error: getActionError(error, 'Failed to update statement of work') }
   }
+}
+
+export async function updateSowDocument(id: string, input: SowDocumentInput) {
+  const auth = await requireTeamMember()
+  if (auth.error || !auth.supabase) return { error: auth.error ?? 'Not authenticated' }
+
+  const existing = await getSowDocument(id)
+  if (existing.error || !existing.document) return { error: existing.error || 'Not found' }
+  if (existing.document.status === 'approved') {
+    return { error: 'This statement of work is approved. Use Update scope to change it.' }
+  }
+  if (existing.document.status === 'complete') {
+    return { error: 'Complete statements of work cannot be edited' }
+  }
+
+  return persistSowDocument(auth.supabase, id, input)
+}
+
+export async function updateApprovedSowDocument(
+  id: string,
+  input: SowDocumentInput,
+  note: string
+) {
+  const auth = await requireTeamMember()
+  if (auth.error || !auth.supabase || !auth.userId) {
+    return { error: auth.error ?? 'Not authenticated' }
+  }
+
+  const noteError = scopeAmendmentNoteError(note)
+  if (noteError) return { error: noteError }
+
+  const existing = await getSowDocument(id)
+  if (existing.error || !existing.document) return { error: existing.error || 'Not found' }
+  if (existing.document.status !== 'approved') {
+    return { error: 'Only an approved statement of work can be updated this way' }
+  }
+
+  const { error: tableError } = await auth.supabase
+    .from('sow_scope_amendments')
+    .select('id')
+    .eq('sow_id', id)
+    .limit(1)
+
+  if (tableError) {
+    if (isMissingRelationError(tableError)) {
+      return {
+        error: 'Apply the latest database migration before updating an approved statement of work.',
+      }
+    }
+    return { error: getActionError(tableError, 'Could not record the scope update') }
+  }
+
+  const saved = await persistSowDocument(auth.supabase, id, input)
+  if ('error' in saved) return saved
+
+  const { error: amendmentError } = await auth.supabase.from('sow_scope_amendments').insert({
+    sow_id: id,
+    note: note.trim(),
+    created_by: auth.userId,
+  })
+
+  if (amendmentError) {
+    console.error('Error recording SoW scope amendment:', amendmentError)
+    return {
+      error: getActionError(
+        amendmentError,
+        'The scope was saved, but the note could not be recorded'
+      ),
+    }
+  }
+
+  return { success: true as const }
 }
 
 export async function archiveSowDocument(id: string) {

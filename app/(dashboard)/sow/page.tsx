@@ -288,6 +288,12 @@ function SowTable({
                 >
                   {approval.label}
                 </Badge>
+                {doc.scope_amendments?.[0] && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Scope updated{' '}
+                    {new Date(doc.scope_amendments[0].created_at).toLocaleDateString()}
+                  </p>
+                )}
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 {doc.monday_project_id || doc.monday_item_id
