@@ -1,20 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { Loader2, CheckCircle2, XCircle } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { SaloLogo } from '@/components/brand/salo-logo'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -27,37 +14,104 @@ import {
   getRateMultiplier,
   scaleForQuote,
   formatSowMoney,
-  formatSowDate,
   lineTotalAtDayRate,
   computeSowTotalsAtDayRate,
   applySowDiscount,
   discountAmountGbp,
   parseDiscountPercent,
 } from '@/lib/sow/calculations'
-import { cn } from '@/lib/utils'
+import { parseScopeNotes } from './scope-notes'
 
 interface SowShareClientProps {
   shareToken: string
 }
 
+function formatDocumentDate(value: string | null | undefined): string {
+  if (!value) return ''
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim())
+  const date = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+function formatDateRange(
+  start: string | null | undefined,
+  end: string | null | undefined
+): string {
+  const startLabel = start ? formatDocumentDate(start) : ''
+  const endLabel = end ? formatDocumentDate(end) : ''
+  if (startLabel && endLabel) return `${startLabel} to ${endLabel}`
+  return startLabel || endLabel
+}
+
+function ThemeToggle() {
+  const [choice, setChoice] = useState<'light' | 'dark' | null>(null)
+  const [systemDark, setSystemDark] = useState(false)
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    setSystemDark(media.matches)
+    const onChange = () => setSystemDark(media.matches)
+    media.addEventListener('change', onChange)
+    try {
+      const saved = localStorage.getItem('sow-theme')
+      if (saved === 'light' || saved === 'dark') {
+        setChoice(saved)
+        document.documentElement.setAttribute('data-theme', saved)
+      }
+    } catch {
+      // Ignore storage failures. The system setting still applies.
+    }
+    return () => {
+      media.removeEventListener('change', onChange)
+      document.documentElement.removeAttribute('data-theme')
+    }
+  }, [])
+
+  function choose(next: 'light' | 'dark') {
+    setChoice(next)
+    document.documentElement.setAttribute('data-theme', next)
+    try {
+      localStorage.setItem('sow-theme', next)
+    } catch {
+      // The choice still applies for this visit.
+    }
+  }
+
+  const active = choice ?? (systemDark ? 'dark' : 'light')
+
+  return (
+    <div className="sow-theme-toggle" role="group" aria-label="Colour theme">
+      <button type="button" aria-pressed={active === 'light'} onClick={() => choose('light')}>
+        Light
+      </button>
+      <button type="button" aria-pressed={active === 'dark'} onClick={() => choose('dark')}>
+        Dark
+      </button>
+    </div>
+  )
+}
+
 function ScopeAmendments({
   document,
-  currency,
 }: {
   document: PublicSowDocument
-  currency: string
 }) {
   const amendments = document.scope_amendments ?? []
   if (amendments.length === 0) return null
 
   return (
-    <div className="space-y-1 border-t border-green-200 pt-2 dark:border-green-900">
-      <p className="text-sm font-medium text-green-800 dark:text-green-300">
-        Deliverables updated after approval
-      </p>
+    <div className="sow-section">
+      <p className="sow-eyebrow">Deliverables updated after approval</p>
       {amendments.map((amendment) => (
-        <p key={amendment.id} className="text-sm text-green-700 dark:text-green-400">
-          {formatSowDate(amendment.created_at, currency)} — {amendment.note}
+        <p key={amendment.id} className="sow-body">
+          {formatDocumentDate(amendment.created_at)}. {amendment.note}
         </p>
       ))}
     </div>
@@ -117,21 +171,23 @@ export default function SowShareClient({ shareToken }: SowShareClientProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="sow-document">
+        <div className="sow-loading" role="status">
+          <Loader2 className="h-8 w-8 animate-spin" aria-hidden />
+          <span className="sr-only">Loading statement of work</span>
+        </div>
       </div>
     )
   }
 
   if (error && !document) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
-        <Card className="w-full max-w-md border-destructive/50">
-          <CardHeader>
-            <CardTitle className="text-destructive">Unable to load</CardTitle>
-            <CardDescription>{error}</CardDescription>
-          </CardHeader>
-        </Card>
+      <div className="sow-document">
+        <div className="sow-error-page">
+          <p className="sow-eyebrow">Statement of work</p>
+          <h1 className="sow-title">Unable to load</h1>
+          <p className="sow-parties">{error}</p>
+        </div>
       </div>
     )
   }
@@ -192,361 +248,298 @@ export default function SowShareClient({ shareToken }: SowShareClientProps) {
   const displayDiscount = discountAmountGbp(displaySubtotal, discountPercent)
   const displayVat = priced.vat_amount_gbp
   const displayTotal = priced.total_gbp
+  const scopeSections = document.notes ? parseScopeNotes(document.notes) : []
+  const nameMissing = !approverName.trim()
 
   return (
-    <div className="min-h-screen bg-muted/30 p-4 md:p-8">
-      <div className="max-w-3xl mx-auto space-y-6">
-        <div className="text-center space-y-4">
-          <div className="flex justify-center">
-            <SaloLogo className="h-8 w-auto" />
+    <div className="sow-document">
+      <article className="sow-sheet">
+        <header>
+          <div className="sow-header-bar">
+            <SaloLogo className="sow-logo" />
+            <ThemeToggle />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">Statement of Work</h1>
-          {document.agency_name ? (
-            <div className="space-y-1">
-              <p className="text-sm text-muted-foreground">
-                Agency partner: <span className="font-medium text-foreground">{document.agency_name}</span>
-              </p>
-              <p className="text-lg text-muted-foreground">
-                End client: <span className="font-medium text-foreground">{document.client_name}</span>
-              </p>
-            </div>
-          ) : (
-            <p className="text-lg text-muted-foreground">{document.client_name}</p>
-          )}
-        </div>
+          <p className="sow-eyebrow">Statement of Work</p>
+          <h1 className="sow-title">{document.title}</h1>
+          <p className="sow-parties">
+            {document.agency_name
+              ? `Agency partner: ${document.agency_name} · End client: ${document.client_name}`
+              : document.client_name}
+          </p>
+        </header>
 
         {isApproved && (
-          <Card className="border-green-200 bg-green-50 dark:bg-green-950/20">
-            <CardContent className="pt-6 flex items-start gap-3">
-              <CheckCircle2 className="h-6 w-6 text-green-600 shrink-0" />
-              <div className="space-y-2">
-                <div>
-                  <p className="font-semibold text-green-800 dark:text-green-300">Approved</p>
-                  <p className="text-sm text-green-700 dark:text-green-400">
-                    {document.approved_by_name} approved this on{' '}
-                    {document.approved_at ? formatSowDate(document.approved_at, currency) : '—'}
-                  </p>
-                </div>
-                <ScopeAmendments document={document} currency={currency} />
-              </div>
-            </CardContent>
-          </Card>
+          <section className="sow-status">
+            <p className="sow-eyebrow">Approved</p>
+            <p className="sow-body">
+              {document.approved_by_name} approved this
+              {document.approved_at ? ` on ${formatDocumentDate(document.approved_at)}` : ''}
+            </p>
+            <ScopeAmendments document={document} />
+          </section>
         )}
 
         {isComplete && (
-          <Card className="border-green-200 bg-green-50 dark:bg-green-950/20">
-            <CardContent className="pt-6 flex items-start gap-3">
-              <CheckCircle2 className="h-6 w-6 text-green-600 shrink-0" />
-              <div className="space-y-2">
-                <div>
-                  <p className="font-semibold text-green-800 dark:text-green-300">Complete</p>
-                  <p className="text-sm text-green-700 dark:text-green-400">
-                    Work on this statement of work is finished
-                  </p>
-                </div>
-                <ScopeAmendments document={document} currency={currency} />
-              </div>
-            </CardContent>
-          </Card>
+          <section className="sow-status">
+            <p className="sow-eyebrow">Complete</p>
+            <p className="sow-body">Work on this statement of work is finished</p>
+            <ScopeAmendments document={document} />
+          </section>
         )}
 
         {isRejected && (
-          <Card className="border-destructive/30 bg-destructive/5">
-            <CardContent className="pt-6 flex items-start gap-3">
-              <XCircle className="h-6 w-6 text-destructive shrink-0" />
-              <div>
-                <p className="font-semibold">Declined</p>
-                <p className="text-sm text-muted-foreground">
-                  {document.rejected_by_name} declined on{' '}
-                  {document.rejected_at ? formatSowDate(document.rejected_at, currency) : '—'}
-                </p>
-                {document.rejection_notes && (
-                  <p className="text-sm mt-2">{document.rejection_notes}</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <section className="sow-status">
+            <p className="sow-eyebrow">Declined</p>
+            <p className="sow-body">
+              {document.rejected_by_name} declined
+              {document.rejected_at ? ` on ${formatDocumentDate(document.rejected_at)}` : ''}
+            </p>
+            {document.rejection_notes && <p className="sow-body">{document.rejection_notes}</p>}
+          </section>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{document.title}</CardTitle>
-            <CardDescription>
-              {showQuotedHours ? 'Scope, time, and investment' : 'Scope and investment'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {canViewWhiteLabel && (
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div>
-                  <Label htmlFor="sow-white-label-view">Show white-label rates</Label>
-                  <p className="text-xs text-muted-foreground">
-                    {showWhiteLabelRates
-                      ? 'Figures use Salo’s direct client day rate'
-                      : 'Figures currently use the partner rate'}
+        {scopeSections.length > 0 && (
+          <section className="sow-panel" aria-label="Scope">
+            {scopeSections.map((section) => (
+              <div key={section.label} className="sow-section">
+                <h2 className="sow-eyebrow">{section.label}</h2>
+                {section.note && <p className="sow-note">{section.note}</p>}
+                {section.items.length > 0 && (
+                  <ol>
+                    {section.items.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ol>
+                )}
+                {section.paragraphs.map((paragraph) => (
+                  <p key={paragraph} className="sow-body">
+                    {paragraph}
                   </p>
+                ))}
+              </div>
+            ))}
+          </section>
+        )}
+
+        {(document.start_date || document.end_date) && (
+          <div className="sow-dates">
+            {document.start_date && (
+              <div className="sow-date">
+                <p className="sow-eyebrow">Project start</p>
+                <p>{formatDocumentDate(document.start_date)}</p>
+              </div>
+            )}
+            {document.end_date && (
+              <div className="sow-date">
+                <p className="sow-eyebrow">Project end</p>
+                <p>{formatDocumentDate(document.end_date)}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {canViewWhiteLabel && (
+          <div className="sow-rates">
+            <div>
+              <label htmlFor="sow-white-label-view">Show white-label rates</label>
+              <p>
+                {showWhiteLabelRates
+                  ? 'Figures use Salo’s direct client day rate'
+                  : 'Figures currently use the partner rate'}
+              </p>
+            </div>
+            <Switch
+              id="sow-white-label-view"
+              checked={showWhiteLabelRates}
+              onCheckedChange={setShowWhiteLabelRates}
+            />
+          </div>
+        )}
+
+        <section className="sow-block" aria-label="Deliverables">
+          <h2 className="sow-eyebrow">Deliverables</h2>
+          {document.line_items.map((item) => {
+            const hoursLabel = item.is_days
+              ? `${scaleForQuote(Number(item.quantity), rateMultiplier)} day${
+                  scaleForQuote(Number(item.quantity), rateMultiplier) !== 1 ? 's' : ''
+                } (${scaleForQuote(Number(item.hours), rateMultiplier).toFixed(1)}h)`
+              : `${scaleForQuote(Number(item.hours), rateMultiplier).toFixed(1)}h`
+            const range = formatDateRange(item.timeline_start, item.timeline_end)
+            return (
+              <div key={item.id} className="sow-row">
+                <div>
+                  <h3>{item.title}</h3>
+                  {item.description && <p className="sow-body">{item.description}</p>}
+                  {(range || showQuotedHours) && (
+                    <p className="sow-meta">
+                      {showQuotedHours ? hoursLabel : ''}
+                      {showQuotedHours && range ? ' · ' : ''}
+                      {range}
+                    </p>
+                  )}
                 </div>
-                <Switch
-                  id="sow-white-label-view"
-                  checked={showWhiteLabelRates}
-                  onCheckedChange={setShowWhiteLabelRates}
+                <p className="sow-cost">
+                  {money(
+                    viewingWhiteLabel
+                      ? lineTotalAtDayRate(Number(item.hours), hoursPerDay, whiteLabelDayRate)
+                      : Number(item.line_total_gbp)
+                  )}
+                </p>
+              </div>
+            )
+          })}
+
+          <div className="sow-totals">
+            {currency !== 'GBP' && (
+              <p className="sow-meta">Amounts in USD (rate £1 = ${Number(fxRate).toFixed(4)})</p>
+            )}
+            <div className="sow-total-line">
+              <span>Subtotal</span>
+              <span>{money(displaySubtotal)}</span>
+            </div>
+            {displayDiscount > 0 && discountPercent != null && (
+              <div className="sow-total-line">
+                <span>Discount ({discountPercent}%)</span>
+                <span>−{money(displayDiscount)}</span>
+              </div>
+            )}
+            {document.include_vat && (
+              <div className="sow-total-line">
+                <span>VAT (20%)</span>
+                <span>{money(displayVat)}</span>
+              </div>
+            )}
+            <div className="sow-total-line sow-grand">
+              <strong>Total</strong>
+              <strong>{money(displayTotal)}</strong>
+            </div>
+            {showQuotedHours && (
+              <div className="sow-total-line">
+                <span>Total hours</span>
+                <span>{displayTotalHours.toFixed(1)}h</span>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {showPaymentSchedule && (document.payment_milestones?.length ?? 0) > 0 && (
+          <section className="sow-block" aria-label="Payment schedule">
+            <h2 className="sow-eyebrow">Payment schedule</h2>
+            {document.payment_milestones!.map((milestone) => {
+              const amount = (displayTotal * Number(milestone.percentage)) / 100
+              return (
+                <div key={milestone.id} className="sow-milestone">
+                  <div>
+                    <p>{milestone.label}</p>
+                    <p className="sow-meta">
+                      {Number(milestone.percentage).toFixed(0)}%
+                      {milestone.due_date
+                        ? ` · due ${formatDocumentDate(milestone.due_date)}`
+                        : ''}
+                    </p>
+                  </div>
+                  <p className="sow-amount">{money(amount)}</p>
+                </div>
+              )
+            })}
+          </section>
+        )}
+
+        {canRespond && (
+          <section className="sow-card sow-response">
+            <h2 className="sow-eyebrow">Your response</h2>
+            <p className="sow-body">
+              Approve this statement of work to confirm scope and investment, or decline with feedback.
+            </p>
+            {error && <p className="sow-error">{error}</p>}
+            <div className="sow-fields sow-following">
+              <div className="sow-field">
+                <label htmlFor="approver-name">Your name</label>
+                <input
+                  id="approver-name"
+                  value={approverName}
+                  onChange={(event) => setApproverName(event.target.value)}
+                  placeholder="Full name"
+                  autoComplete="name"
+                />
+              </div>
+              <div className="sow-field">
+                <label htmlFor="approver-email">Email (optional)</label>
+                <input
+                  id="approver-email"
+                  type="email"
+                  value={approverEmail}
+                  onChange={(event) => setApproverEmail(event.target.value)}
+                  placeholder="you@company.com"
+                  autoComplete="email"
+                />
+              </div>
+            </div>
+
+            {showRejectForm && (
+              <div className="sow-field sow-following">
+                <label htmlFor="rejection-notes">Feedback (optional)</label>
+                <textarea
+                  id="rejection-notes"
+                  value={rejectionNotes}
+                  onChange={(event) => setRejectionNotes(event.target.value)}
+                  placeholder="Let us know what needs changing"
+                  rows={3}
                 />
               </div>
             )}
-            {document.notes && (
-              <div className="rounded-lg bg-muted/50 p-4 text-sm whitespace-pre-wrap">
-                {document.notes}
-              </div>
-            )}
 
-            {(document.start_date || document.end_date) && (
-              <div className="grid gap-3 sm:grid-cols-2 text-sm">
-                {document.start_date && (
-                  <div className="rounded-lg border p-3">
-                    <p className="text-muted-foreground">Project start</p>
-                    <p className="font-medium mt-1">
-                      {formatSowDate(document.start_date, currency)}
-                    </p>
-                  </div>
-                )}
-                {document.end_date && (
-                  <div className="rounded-lg border p-3">
-                    <p className="text-muted-foreground">Project end</p>
-                    <p className="font-medium mt-1">
-                      {formatSowDate(document.end_date, currency)}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="rounded-lg border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Deliverable</TableHead>
-                    {showQuotedHours && <TableHead className="text-right">Time</TableHead>}
-                    <TableHead className="hidden sm:table-cell text-right">Cost</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {document.line_items.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <p className="font-medium">{item.title}</p>
-                        {item.description && (
-                          <p className="text-sm text-muted-foreground whitespace-pre-wrap mt-1">
-                            {item.description}
-                          </p>
-                        )}
-                        {(item.timeline_start || item.timeline_end) && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {item.timeline_start
-                              ? formatSowDate(item.timeline_start, currency)
-                              : '—'}
-                            {' → '}
-                            {item.timeline_end
-                              ? formatSowDate(item.timeline_end, currency)
-                              : '—'}
-                          </p>
-                        )}
-                        <p className="mt-1.5 text-sm font-medium sm:hidden">
-                          {money(
-                            viewingWhiteLabel
-                              ? lineTotalAtDayRate(Number(item.hours), hoursPerDay, whiteLabelDayRate)
-                              : Number(item.line_total_gbp)
-                          )}
-                        </p>
-                      </TableCell>
-                      {showQuotedHours && (
-                        <TableCell className="text-right text-muted-foreground">
-                          {item.is_days
-                            ? `${scaleForQuote(Number(item.quantity), rateMultiplier)} day${
-                                scaleForQuote(Number(item.quantity), rateMultiplier) !== 1
-                                  ? 's'
-                                  : ''
-                              } (${scaleForQuote(Number(item.hours), rateMultiplier).toFixed(1)}h)`
-                            : `${scaleForQuote(Number(item.hours), rateMultiplier).toFixed(1)}h`}
-                        </TableCell>
-                      )}
-                      <TableCell className="hidden sm:table-cell text-right">
-                        {money(
-                          viewingWhiteLabel
-                            ? lineTotalAtDayRate(Number(item.hours), hoursPerDay, whiteLabelDayRate)
-                            : Number(item.line_total_gbp)
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="space-y-1 text-sm border-t pt-4">
-              {currency !== 'GBP' && (
-                <p className="text-xs text-muted-foreground pb-2">
-                  Amounts in USD (rate £1 = ${Number(fxRate).toFixed(4)})
-                </p>
-              )}
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span>{money(displaySubtotal)}</span>
-              </div>
-              {displayDiscount > 0 && discountPercent != null && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Discount ({discountPercent}%)</span>
-                  <span>−{money(displayDiscount)}</span>
-                </div>
-              )}
-              {document.include_vat && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">VAT (20%)</span>
-                  <span>{money(displayVat)}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-semibold text-base pt-2">
-                <span>Total</span>
-                <span>{money(displayTotal)}</span>
-              </div>
-              {showQuotedHours && (
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Total hours</span>
-                  <span>{displayTotalHours.toFixed(1)}h</span>
-                </div>
+            <div className="sow-actions">
+              {!showRejectForm ? (
+                <>
+                  <button
+                    type="button"
+                    className="sow-button sow-button-secondary"
+                    onClick={() => setShowRejectForm(true)}
+                    disabled={submitting}
+                  >
+                    Decline
+                  </button>
+                  <button
+                    type="button"
+                    className="sow-button sow-button-primary"
+                    onClick={handleApprove}
+                    disabled={submitting || nameMissing}
+                  >
+                    {submitting ? 'Approving' : 'Approve statement of work'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="sow-button sow-button-secondary"
+                    onClick={() => {
+                      setShowRejectForm(false)
+                      setRejectionNotes('')
+                    }}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="sow-button sow-button-secondary"
+                    onClick={handleReject}
+                    disabled={submitting || nameMissing}
+                  >
+                    {submitting ? 'Sending' : 'Confirm decline'}
+                  </button>
+                </>
               )}
             </div>
-
-            {(showPaymentSchedule && (document.payment_milestones?.length ?? 0) > 0) && (
-              <div className="border-t pt-4 space-y-2">
-                <h3 className="font-medium text-sm">Payment schedule</h3>
-                <div className="space-y-1.5 text-sm">
-                  {document.payment_milestones!.map((milestone) => {
-                    const amount =
-                      (displayTotal * Number(milestone.percentage)) / 100
-                    return (
-                      <div
-                        key={milestone.id}
-                        className="flex items-baseline justify-between gap-4"
-                      >
-                        <span>
-                          <span className="font-medium">{milestone.label}</span>
-                          <span className="text-muted-foreground">
-                            {' '}
-                            · {Number(milestone.percentage).toFixed(0)}%
-                            {milestone.due_date
-                              ? ` · due ${formatSowDate(milestone.due_date, currency)}`
-                              : ''}
-                          </span>
-                        </span>
-                        <span className="font-medium whitespace-nowrap">{money(amount)}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {canRespond && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Your response</CardTitle>
-              <CardDescription>
-                Approve this statement of work to confirm scope and investment, or decline with feedback.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {error && (
-                <p className="text-sm text-destructive">{error}</p>
-              )}
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="approver-name">Your name *</Label>
-                  <Input
-                    id="approver-name"
-                    value={approverName}
-                    onChange={(e) => setApproverName(e.target.value)}
-                    placeholder="Full name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="approver-email">Email (optional)</Label>
-                  <Input
-                    id="approver-email"
-                    type="email"
-                    value={approverEmail}
-                    onChange={(e) => setApproverEmail(e.target.value)}
-                    placeholder="you@company.com"
-                  />
-                </div>
-              </div>
-
-              {showRejectForm && (
-                <div className="space-y-2">
-                  <Label htmlFor="rejection-notes">Feedback (optional)</Label>
-                  <Textarea
-                    id="rejection-notes"
-                    value={rejectionNotes}
-                    onChange={(e) => setRejectionNotes(e.target.value)}
-                    placeholder="Let us know what needs changing..."
-                    rows={3}
-                  />
-                </div>
-              )}
-
-              <div className="flex flex-col-reverse sm:flex-row gap-3">
-                {!showRejectForm ? (
-                  <>
-                    <Button
-                      variant="outline"
-                      className="w-auto self-start sm:self-auto"
-                      onClick={() => setShowRejectForm(true)}
-                      disabled={submitting}
-                    >
-                      Decline
-                    </Button>
-                    <Button
-                      className={cn('w-full flex-1', 'bg-green-600 hover:bg-green-700')}
-                      onClick={handleApprove}
-                      disabled={submitting || !approverName.trim()}
-                    >
-                      {submitting ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="mr-2 h-4 w-4" />
-                      )}
-                      Approve statement of work
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => {
-                        setShowRejectForm(false)
-                        setRejectionNotes('')
-                      }}
-                      disabled={submitting}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      className="flex-1"
-                      onClick={handleReject}
-                      disabled={submitting || !approverName.trim()}
-                    >
-                      Confirm decline
-                    </Button>
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          </section>
         )}
-      </div>
+
+        <footer className="sow-footer">
+          Salo Creative · <a href="https://salo.uk">salo.uk</a>
+        </footer>
+      </article>
     </div>
   )
 }

@@ -1,0 +1,607 @@
+.sow-document {
+  --black: #0d0d0d;
+  --body: rgba(13, 13, 13, 0.65);
+  --muted: rgba(13, 13, 13, 0.35);
+  --accent: #6405ff;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-emph: rgba(0, 0, 0, 0.15);
+  --bg: #ffffff;
+  --bg-warm: #f5f2ee;
+  --surface: #ffffff;
+  --panel: var(--bg-warm);
+  --card: var(--bg);
+  --eyebrow: var(--accent);
+  --on-accent: #ffffff;
+
+  box-sizing: border-box;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: var(--bg-warm);
+  color: var(--black);
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sow-document *,
+.sow-document *::before,
+.sow-document *::after {
+  box-sizing: border-box;
+}
+
+@media (min-width: 768px) {
+  .sow-document {
+    font-size: 15px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme='light']) .sow-document {
+    --black: #ffffff;
+    --body: rgba(255, 255, 255, 0.7);
+    --muted: rgba(255, 255, 255, 0.4);
+    --border: rgba(255, 255, 255, 0.1);
+    --border-emph: rgba(255, 255, 255, 0.18);
+    --bg: #0d0d0d;
+    --surface: rgba(255, 255, 255, 0.04);
+    --panel: var(--surface);
+    --card: var(--surface);
+    --eyebrow: var(--body);
+    background: var(--bg);
+  }
+}
+
+html[data-theme='dark'] .sow-document {
+  --black: #ffffff;
+  --body: rgba(255, 255, 255, 0.7);
+  --muted: rgba(255, 255, 255, 0.4);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-emph: rgba(255, 255, 255, 0.18);
+  --bg: #0d0d0d;
+  --surface: rgba(255, 255, 255, 0.04);
+  --panel: var(--surface);
+  --card: var(--surface);
+  --eyebrow: var(--body);
+  background: var(--bg);
+}
+
+html[data-theme='light'] .sow-document {
+  --black: #0d0d0d;
+  --body: rgba(13, 13, 13, 0.65);
+  --muted: rgba(13, 13, 13, 0.35);
+  --accent: #6405ff;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-emph: rgba(0, 0, 0, 0.15);
+  --bg: #ffffff;
+  --bg-warm: #f5f2ee;
+  --surface: #ffffff;
+  --panel: var(--bg-warm);
+  --card: var(--bg);
+  --eyebrow: var(--accent);
+  background: var(--bg-warm);
+}
+
+.sow-sheet {
+  width: 100%;
+  max-width: 768px;
+  margin: 0 auto;
+  padding: 32px 16px 48px;
+}
+
+@media (min-width: 768px) {
+  .sow-sheet {
+    padding: 48px 32px 64px;
+  }
+}
+
+.sow-header-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sow-logo {
+  display: block;
+  width: auto;
+  height: 32px;
+  color: var(--black);
+}
+
+.sow-theme-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.sow-theme-toggle button {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sow-theme-toggle button[aria-pressed='true'] {
+  border-color: var(--border-emph);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.sow-eyebrow {
+  margin: 24px 0 8px;
+  color: var(--eyebrow);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.sow-title {
+  margin: 0;
+  color: var(--black);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-transform: none;
+}
+
+.sow-parties {
+  margin: 12px 0 0;
+  color: var(--body);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+@media (min-width: 768px) {
+  .sow-parties {
+    font-size: 15px;
+  }
+}
+
+.sow-status,
+.sow-panel,
+.sow-card,
+.sow-rates {
+  margin-top: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.sow-status,
+.sow-panel {
+  padding: 24px;
+  background: var(--panel);
+}
+
+/* White card in light mode. Dark mode --card is the same surface as --panel. */
+.sow-panel {
+  background: var(--card);
+}
+
+.sow-card,
+.sow-rates {
+  padding: 24px;
+  background: var(--card);
+}
+
+.sow-rates {
+  background: var(--bg-warm);
+}
+
+.sow-status p,
+.sow-panel p,
+.sow-card p {
+  margin: 0;
+}
+
+.sow-status .sow-eyebrow,
+.sow-panel .sow-eyebrow,
+.sow-section-label {
+  margin-top: 0;
+}
+
+.sow-status-copy,
+.sow-body {
+  color: var(--body);
+  font-weight: 400;
+}
+
+.sow-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* Dates, captions and payment details are read by the client. */
+.sow-row .sow-meta,
+.sow-milestone .sow-meta,
+.sow-totals .sow-meta {
+  color: var(--body);
+}
+
+.sow-section + .sow-section {
+  margin-top: 24px;
+}
+
+.sow-section .sow-eyebrow {
+  margin-bottom: 8px;
+}
+
+.sow-section p + p,
+.sow-section .sow-note + p,
+.sow-section ol + p {
+  margin-top: 8px;
+}
+
+.sow-note {
+  margin: 0 0 8px;
+  color: var(--body);
+}
+
+.sow-section ol {
+  margin: 0;
+  padding-left: 24px;
+  color: var(--body);
+  list-style: decimal;
+}
+
+.sow-section li + li {
+  margin-top: 8px;
+}
+
+.sow-dates {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+@media (min-width: 768px) {
+  .sow-dates {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.sow-date {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-warm);
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme='light']) .sow-date {
+    background: var(--card);
+  }
+}
+
+html[data-theme='dark'] .sow-date {
+  background: var(--card);
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme='light']) .sow-rates {
+    background: var(--card);
+  }
+}
+
+html[data-theme='dark'] .sow-rates {
+  background: var(--card);
+}
+
+.sow-date .sow-eyebrow {
+  margin: 0 0 8px;
+}
+
+.sow-date p {
+  margin: 0;
+  color: var(--black);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sow-block {
+  margin-top: 32px;
+}
+
+.sow-block > .sow-eyebrow {
+  margin-bottom: 8px;
+}
+
+.sow-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+@media (min-width: 768px) {
+  .sow-row {
+    grid-template-columns: 1fr auto;
+    gap: 24px;
+    align-items: start;
+  }
+}
+
+.sow-row h3 {
+  margin: 0;
+  color: var(--black);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.sow-row .sow-body {
+  margin-top: 8px;
+}
+
+.sow-row .sow-meta {
+  margin-top: 8px;
+}
+
+.sow-cost {
+  color: var(--black);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+
+@media (min-width: 768px) {
+  .sow-cost {
+    text-align: right;
+  }
+}
+
+.sow-totals {
+  margin-top: 16px;
+}
+
+.sow-total-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 8px;
+  color: var(--body);
+  font-variant-numeric: tabular-nums;
+}
+
+.sow-total-line strong {
+  color: var(--black);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.sow-total-line.sow-grand {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-emph);
+  color: var(--black);
+}
+
+.sow-milestone {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.sow-milestone p {
+  margin: 0;
+}
+
+.sow-milestone .sow-meta {
+  margin-top: 4px;
+}
+
+.sow-amount {
+  color: var(--black);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sow-rates {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sow-rates label {
+  color: var(--black);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sow-rates p {
+  margin: 4px 0 0;
+  color: var(--body);
+  font-size: 13px;
+}
+
+.sow-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sow-fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .sow-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.sow-field label {
+  color: var(--body);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sow-field input,
+.sow-field textarea {
+  width: 100%;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--black);
+  font: inherit;
+  font-size: 13px;
+}
+
+@media (min-width: 768px) {
+  .sow-field input,
+  .sow-field textarea {
+    font-size: 15px;
+  }
+}
+
+.sow-field input:focus,
+.sow-field textarea:focus,
+.sow-theme-toggle button:focus-visible,
+.sow-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sow-following {
+  margin-top: 16px;
+}
+
+.sow-actions {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+@media (min-width: 768px) {
+  .sow-actions {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+.sow-button {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.sow-button-primary {
+  border: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+@media (min-width: 768px) {
+  .sow-button-primary {
+    flex: 1;
+  }
+}
+
+.sow-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sow-button-secondary {
+  border: 1px solid var(--border-emph);
+  background: transparent;
+  color: var(--black);
+}
+
+.sow-error {
+  margin: 0 0 16px;
+  color: var(--black);
+  font-weight: 600;
+}
+
+.sow-footer {
+  margin: 48px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sow-footer a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sow-loading,
+.sow-error-page {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+}
+
+.sow-error-page {
+  width: 100%;
+  max-width: 768px;
+  margin: 0 auto;
+}
+
+@media print {
+  html[data-theme='dark'] .sow-document,
+  .sow-document {
+    --black: #0d0d0d;
+    --body: rgba(13, 13, 13, 0.65);
+    --muted: rgba(13, 13, 13, 0.35);
+    --accent: #6405ff;
+    --border: rgba(0, 0, 0, 0.08);
+    --border-emph: rgba(0, 0, 0, 0.15);
+    --bg: #ffffff;
+    --bg-warm: #f5f2ee;
+    --surface: #ffffff;
+    --panel: var(--bg-warm);
+    --card: var(--bg);
+    --eyebrow: var(--accent);
+    background: #ffffff;
+  }
+
+  .sow-theme-toggle,
+  .sow-response {
+    display: none !important;
+  }
+
+  .sow-sheet {
+    max-width: none;
+    padding: 0;
+  }
+
+  .sow-row {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  @page {
+    margin: 16mm;
+  }
+}
